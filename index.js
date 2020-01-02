@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const pify = require('pify');
-const downloadStatus = require('download-status');
+const ProgressBar = require('progress');
 const archModule = require('arch');
 
 const binCheck = require('bin-check');
@@ -192,10 +192,22 @@ module.exports = class BinWrapper {
 
     files.forEach(file => urls.push(file.url));
 
-    return Promise.all(urls.map(url => download(url, this.dest(), {
-      extract: true,
-      strip: this.options.strip
-    }).use(downloadStatus))).then(result => {
+    return Promise.all(urls.map(url => {
+      var bar = new ProgressBar('[:bar] :percent :etas', {
+        complete: '=',
+        incomplete: ' ',
+        width: 20,
+        total: 0
+      });
+      return download(url, this.dest(), {
+        extract: true,
+        strip: this.options.strip
+      })
+      .on('response', res => {
+        bar.total = res.headers['content-length'];
+        res.on('data', data => bar.tick(data.length));
+      });
+    })).then(result => {
       const resultingFiles = flatten(result.map((item, index) => {
         if (Array.isArray(item)) {
           return item.map(file => file.path);
