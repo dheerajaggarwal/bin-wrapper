@@ -13,7 +13,7 @@
 		"node": ">=6"
 	},
 	"scripts": {
-		"test": "xo && ava"
+		"test": "ava"
 	},
 	"files": [
 		"index.js"
@@ -25,11 +25,11 @@
 		"wrapper"
 	],
 	"dependencies": {
+		"arch": "^2.1.1",
 		"bin-check": "^4.1.0",
 		"bin-version-check": "^4.0.0",
 		"download": "^7.1.0",
-		"import-lazy": "^3.1.0",
-		"os-filter-obj": "^2.0.0",
+		"download-status": "^2.2.1",
 		"pify": "^4.0.1"
 	},
 	"devDependencies": {

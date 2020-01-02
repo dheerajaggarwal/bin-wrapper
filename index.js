@@ -3,12 +3,12 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const pify = require('pify');
-const importLazy = require('import-lazy')(require);
+const downloadStatus = require('download-status');
+const archModule = require('arch');
 
-const binCheck = importLazy('bin-check');
-const binVersionCheck = importLazy('bin-version-check');
-const download = importLazy('download');
-const osFilterObj = importLazy('os-filter-obj');
+const binCheck = require('bin-check');
+const binVersionCheck = require('bin-version-check');
+const download = require('download');
 
 const statAsync = pify(fs.stat);
 const chmodAsync = pify(fs.chmod);
@@ -20,189 +20,208 @@ const chmodAsync = pify(fs.chmod);
  * @api public
  */
 module.exports = class BinWrapper {
-	constructor(options = {}) {
-		this.options = options;
+  constructor(options = {}) {
+    this.options = options;
 
-		if (this.options.strip <= 0) {
-			this.options.strip = 0;
-		} else if (!this.options.strip) {
-			this.options.strip = 1;
-		}
-	}
+    if (this.options.strip <= 0) {
+      this.options.strip = 0;
+    } else if (!this.options.strip) {
+      this.options.strip = 1;
+    }
+  }
 
-	/**
-	 * Get or set files to download
-	 *
-	 * @param {String} src
-	 * @param {String} os
-	 * @param {String} arch
-	 * @api public
-	 */
-	src(src, os, arch) {
-		if (arguments.length === 0) {
-			return this._src;
-		}
+  /**
+   * Get or set files to download
+   *
+   * @param {String} src
+   * @param {String} key
+   * @api public
+   */
+  src(src, key) {
+    if (arguments.length === 0) {
+      return this._src;
+    }
 
-		this._src = this._src || [];
-		this._src.push({
-			url: src,
-			os,
-			arch
-		});
+    this._src = this._src || [];
+    this._src.push({
+      url: src,
+      key
+    });
 
-		return this;
-	}
+    return this;
+  }
 
-	/**
-	 * Get or set the destination
-	 *
-	 * @param {String} dest
-	 * @api public
-	 */
-	dest(dest) {
-		if (arguments.length === 0) {
-			return this._dest;
-		}
+  /**
+   * Get or set the destination
+   *
+   * @param {String} dest
+   * @api public
+   */
+  dest(dest) {
+    if (arguments.length === 0) {
+      return this._dest;
+    }
 
-		this._dest = dest;
-		return this;
-	}
+    this._dest = dest;
+    return this;
+  }
 
-	/**
-	 * Get or set the binary
-	 *
-	 * @param {String} bin
-	 * @api public
-	 */
-	use(bin) {
-		if (arguments.length === 0) {
-			return this._use;
-		}
+  /**
+   * Get or set the binary
+   *
+   * @param {String} bin
+   * @api public
+   */
+  use(bin) {
+    if (arguments.length === 0) {
+      return this._use;
+    }
 
-		this._use = bin;
-		return this;
-	}
+    this._use = bin;
+    return this;
+  }
+  
+  /**
+   * Get or set the key function
+   *
+   * @param {Function} keyFn
+   * @api public
+   */
+  key(keyFn){
+    if(arguments.length === 0){
+      return this._key ? this._key() : (process.platform + archModule());
+    }
+    this._key = keyFn;
+    return this;
+  }
 
-	/**
-	 * Get or set a semver range to test the binary against
-	 *
-	 * @param {String} range
-	 * @api public
-	 */
-	version(range) {
-		if (arguments.length === 0) {
-			return this._version;
-		}
+  /**
+   * returns the filtered list of urls
+   */
+  filter(input){
+    return input.filter(x => x.key === this.key());
+  }
 
-		this._version = range;
-		return this;
-	}
+  /**
+   * Get or set a semver range to test the binary against
+   *
+   * @param {String} range
+   * @api public
+   */
+  version(range) {
+    if (arguments.length === 0) {
+      return this._version;
+    }
 
-	/**
-	 * Get path to the binary
-	 *
-	 * @api public
-	 */
-	path() {
-		return path.join(this.dest(), this.use());
-	}
+    this._version = range;
+    return this;
+  }
 
-	/**
-	 * Run
-	 *
-	 * @param {Array} cmd
-	 * @api public
-	 */
-	run(cmd = ['--version']) {
-		return this.findExisting().then(() => {
-			if (this.options.skipCheck) {
-				return;
-			}
+  /**
+   * Get path to the binary
+   *
+   * @api public
+   */
+  path() {
+    return path.join(this.dest(), this.use());
+  }
 
-			return this.runCheck(cmd);
-		});
-	}
+  /**
+   * Run
+   *
+   * @param {Array} cmd
+   * @api public
+   */
+  run(cmd = ['--version']) {
+    return this.findExisting().then(() => {
+      if (this.options.skipCheck) {
+        return;
+      }
 
-	/**
-	 * Run binary check
-	 *
-	 * @param {Array} cmd
-	 * @api private
-	 */
-	runCheck(cmd) {
-		return binCheck(this.path(), cmd).then(works => {
-			if (!works) {
-				throw new Error(`The \`${this.path()}\` binary doesn't seem to work correctly`);
-			}
+      return this.runCheck(cmd);
+    });
+  }
 
-			if (this.version()) {
-				return binVersionCheck(this.path(), this.version());
-			}
+  /**
+   * Run binary check
+   *
+   * @param {Array} cmd
+   * @api private
+   */
+  runCheck(cmd) {
+    return binCheck(this.path(), cmd).then(works => {
+      if (!works) {
+        throw new Error(`The \`${this.path()}\` binary doesn't seem to work correctly`);
+      }
 
-			return Promise.resolve();
-		});
-	}
+      if (this.version()) {
+        return binVersionCheck(this.path(), this.version());
+      }
 
-	/**
-	 * Find existing files
-	 *
-	 * @api private
-	 */
-	findExisting() {
-		return statAsync(this.path()).catch(error => {
-			if (error && error.code === 'ENOENT') {
-				return this.download();
-			}
+      return Promise.resolve();
+    });
+  }
 
-			return Promise.reject(error);
-		});
-	}
+  /**
+   * Find existing files
+   *
+   * @api private
+   */
+  findExisting() {
+    return statAsync(this.path()).catch(error => {
+      if (error && error.code === 'ENOENT') {
+        return this.download();
+      }
 
-	/**
-	 * Download files
-	 *
-	 * @api private
-	 */
-	download() {
-		const files = osFilterObj(this.src() || []);
-		const urls = [];
+      return Promise.reject(error);
+    });
+  }
 
-		if (files.length === 0) {
-			return Promise.reject(new Error('No binary found matching your system. It\'s probably not supported.'));
-		}
+  /**
+   * Download files
+   *
+   * @api private
+   */
+  download() {
+    const files = this.filter(this.src() || []);
+    const urls = [];
 
-		files.forEach(file => urls.push(file.url));
+    if (files.length === 0) {
+      return Promise.reject(new Error('No binary found matching your system. It\'s probably not supported.'));
+    }
 
-		return Promise.all(urls.map(url => download(url, this.dest(), {
-			extract: true,
-			strip: this.options.strip
-		}))).then(result => {
-			const resultingFiles = flatten(result.map((item, index) => {
-				if (Array.isArray(item)) {
-					return item.map(file => file.path);
-				}
+    files.forEach(file => urls.push(file.url));
 
-				const parsedUrl = url.parse(files[index].url);
-				const parsedPath = path.parse(parsedUrl.pathname);
+    return Promise.all(urls.map(url => download(url, this.dest(), {
+      extract: true,
+      strip: this.options.strip
+    }).use(downloadStatus))).then(result => {
+      const resultingFiles = flatten(result.map((item, index) => {
+        if (Array.isArray(item)) {
+          return item.map(file => file.path);
+        }
 
-				return parsedPath.base;
-			}));
+        const parsedUrl = url.parse(files[index].url);
+        const parsedPath = path.parse(parsedUrl.pathname);
 
-			return Promise.all(resultingFiles.map(fileName => {
-				return chmodAsync(path.join(this.dest(), fileName), 0o755);
-			}));
-		});
-	}
+        return parsedPath.base;
+      }));
+
+      return Promise.all(resultingFiles.map(fileName => {
+        return chmodAsync(path.join(this.dest(), fileName), 0o755);
+      }));
+    });
+  }
 };
 
 function flatten(arr) {
-	return arr.reduce((acc, elem) => {
-		if (Array.isArray(elem)) {
-			acc.push(...elem);
-		} else {
-			acc.push(elem);
-		}
+  return arr.reduce((acc, elem) => {
+    if (Array.isArray(elem)) {
+      acc.push(...elem);
+    } else {
+      acc.push(elem);
+    }
 
-		return acc;
-	}, []);
+    return acc;
+  }, []);
 }
